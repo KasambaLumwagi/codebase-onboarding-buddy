@@ -6,3 +6,4 @@ pydantic
 gitpython
 gunicorn
 sqlalchemy
+grpcio
