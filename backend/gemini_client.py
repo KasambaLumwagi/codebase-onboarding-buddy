@@ -3,8 +3,11 @@ import google.generativeai as genai
 from typing import Optional
 
 class GeminiClient:
-    def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
+    def __init__(self, api_key: str = None):
+        key_to_use = api_key or os.environ.get("GEMINI_API_KEY")
+        if not key_to_use:
+            raise ValueError("API Key not found. Please set GEMINI_API_KEY env var or pass it explicitly.")
+        genai.configure(api_key=key_to_use)
         # Using gemini-2.5-flash as confirmed by user available models
         self.model = genai.GenerativeModel('gemini-2.5-flash')
         self.chat = None

@@ -6,6 +6,8 @@ from pathlib import Path
 
 # Common ignored directories and files
 IGNORED_DIRS = {'.git', 'node_modules', 'venv', '__pycache__', 'dist', 'build', '.idea', '.vscode'}
+IGNORED_FILES = {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock', 'Pipfile.lock'}
+
 # Valid source code extensions to ingest
 VALID_EXTENSIONS = {
     '.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.css', 
@@ -15,6 +17,9 @@ VALID_EXTENSIONS = {
 }
 
 def should_process_file(file_path: Path) -> bool:
+    # Check filename
+    if file_path.name in IGNORED_FILES:
+        return False
     # Check extensions
     if file_path.suffix not in VALID_EXTENSIONS:
         return False
@@ -35,7 +40,7 @@ def clone_and_process_repo(repo_url: str) -> str:
     print(f"Cloning {repo_url} to {temp_dir}...")
     
     try:
-        git.Repo.clone_from(repo_url, temp_dir)
+        git.Repo.clone_from(repo_url, temp_dir, depth=1)
         
         all_content = []
         file_count = 0
