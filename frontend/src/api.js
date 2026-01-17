@@ -8,7 +8,8 @@ export const ingestRepo = async (repoUrl, apiKey = null) => {
   });
   if (!response.ok) {
     const err = await response.json();
-    throw new Error(err.detail || "Ingestion failed");
+    const detail = err.detail || "Ingestion failed";
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
   }
   return response.json();
 };
