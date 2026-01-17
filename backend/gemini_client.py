@@ -21,7 +21,7 @@ class GeminiClient:
         except Exception as e:
             print(f"Error listing models: {e}")
 
-    def start_chat(self, context_text: str):
+    def start_chat(self, context_text: str, custom_history: list = None):
         """
         Initializes the chat with the codebase context.
         """
@@ -37,14 +37,30 @@ Be concise, specific, and cite file names where possible.
 CODEBASE CONTEXT:
 {context_text}
 """
-        # Starting chat with history is one way, or just sending the first system prompt.
-        # Gemini API supports system_instruction on model init, but chat history is easier to manage here.
-        # We'll treat the context as the first user message or system prompt equivalent.
         
-        self.chat = self.model.start_chat(history=[
-            {"role": "user", "parts": [initial_prompt]},
-            {"role": "model", "parts": ["Understood. I have analyzed the codebase. Ask me anything about it."]}
-        ])
+        final_history = []
+        if custom_history:
+            # Prepend context as system prompt equivalent in first user message
+            # But since gemini history is strict (User, Model, User, Model...),
+            # we need to be careful. If we are restoring, we should assume the
+            # first message in custom_history IS the context or we need to prepend it.
+            # Simpler approach: Just use custom_history if provided, assuming it's valid.
+            # BETTER APPROACH: Add context as a separate history item if not present?
+            # For simplicity in this MVP: We re-initialize freshly with context,
+            # then append the rest of the history? No, API expects history at init.
+            
+            # Re-inserting context at the start of history
+            final_history = [
+                 {"role": "user", "parts": [initial_prompt]},
+                 {"role": "model", "parts": ["Understood. I have analyzed the codebase. Ask me anything about it."]}
+            ] + custom_history
+        else:
+            final_history = [
+                {"role": "user", "parts": [initial_prompt]},
+                {"role": "model", "parts": ["Understood. I have analyzed the codebase. Ask me anything about it."]}
+            ]
+        
+        self.chat = self.model.start_chat(history=final_history)
 
     def send_message(self, message: str) -> str:
         if not self.chat:

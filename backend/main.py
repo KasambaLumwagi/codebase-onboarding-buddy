@@ -83,18 +83,42 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     session_id = request.session_id
     
     if session_id not in active_chats:
-        # Try to revive session if not in memory (Optional for MVP, but good for persistence)
-        # For now, let's keep it simple: if server restart, we lost the Gemini object state
-        # but we can rebuild it if we have the repo context.
+        # Rebuild Session Logic
+        print(f"Session {session_id} not in memory. Attempting to restore...")
         session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
         if not session:
             raise HTTPException(status_code=404, detail="Session not found.")
         
-        # We need the API key to restore. 
-        # CAUTION: We didn't store API key in DB for security. 
-        # So user needs to provide it again or re-ingest if session is lost from memory.
-        # For this hackathon, let's assume client sends it or we fail gracefully.
-        raise HTTPException(status_code=400, detail="Session expired from memory. Please re-ingest.")
+        try:
+            # 1. Get API Key (from env or errorout)
+            # Since we moved to .env/server-side env vars, we can just init the client!
+            client = GeminiClient(api_key=None) # Will pick up os.environ["GEMINI_API_KEY"]
+            
+            # 2. Re-construct history from DB
+            # We skip the initial context exchange since start_chat adds it back
+            # We want to load the *subsequent* exchange.
+            # However, start_chat (modified above) expects the *additional* history.
+            
+            db_messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
+            
+            history_parts = []
+            for msg in db_messages:
+                # Gemini expects {"role": "user"|"model", "parts": ["text"]}
+                history_parts.append({
+                    "role": msg.role,
+                    "parts": [msg.text]
+                })
+                
+            # 3. Start Chat with context + history
+            client.start_chat(session.repository.context_text, custom_history=history_parts)
+            
+            # 4. Save to active_chats
+            active_chats[session_id] = client
+            print(f"Session {session_id} restored successfully.")
+            
+        except Exception as e:
+             print(f"Failed to restore session: {e}")
+             raise HTTPException(status_code=500, detail=f"Failed to restore session: {str(e)}")
 
     client = active_chats[session_id]
     
@@ -151,14 +175,18 @@ def get_session_messages(session_id: int, db: Session = Depends(get_db)):
     if session_id not in active_chats:
         try:
             repo = session.repository
-            # We don't have the API key stored for security, so we can't fully reconnect 
-            # the Gemini client for *new* messages without asking user again.
-            # But we CAN return the history for viewing.
-            # For this hackathon, we'll return history. If user tries to chat, it might fail 
-            # if we can't find the client. 
-            pass 
+            client = GeminiClient(api_key=None)
+            
+            # Load existing messages
+            db_messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
+            history_parts = [{"role": m.role, "parts": [m.text]} for m in db_messages]
+            
+            client.start_chat(repo.context_text, custom_history=history_parts)
+            active_chats[session_id] = client
         except Exception as e:
-            print(f"Error restoring session: {e}")
+            print(f"Error restoring session for view: {e}")
+            # Non-critical for just viewing, but critical if they want to reply later
+            pass
 
     messages = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at).all()
     return {"messages": [{"role": m.role, "text": m.text} for m in messages]}
